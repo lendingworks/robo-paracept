@@ -178,6 +178,7 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
         $di = new \Codeception\Lib\Di();
         // gather test dependencies and deal with dataproviders
         $testsListWithDependencies = [];
+        $skippedTests = [];
         foreach ($tests as $test) {
             if ($test instanceof DataProvider || $test instanceof DataProviderTestSuite) {
                 $test = current($test->tests());
@@ -192,9 +193,14 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
             $testFilePath = $this->getTestRelativePath($test);
 
             if (method_exists($test, 'getMetadata')) {
-                $testsListWithDependencies[$testFilePath] = $test->getMetadata()->getDependencies();
-                if ($testsHaveAtLeastOneDependency === false and count($test->getMetadata()->getDependencies()) != 0) {
+                $testMetadata = $test->getMetadata();
+                $testsListWithDependencies[$testFilePath] = $testMetadata->getDependencies();
+                if ($testsHaveAtLeastOneDependency === false and count($testMetadata->getDependencies()) != 0) {
                     $testsHaveAtLeastOneDependency = true;
+                }
+
+                if ($testMetadata->getSkip() !== null) {
+                    $skippedTests[] = $testFilePath;
                 }
 
             // little hack to get dependencies from phpunit test cases that are private.
@@ -251,6 +257,13 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
             $orderedListOfTests = array_keys($testsListWithDependencies);
         }
 
+        // Remove skipped tests from our calculations as they take "no" time to
+        // run and add them all to the last group.
+        $hasSkippedTests = \count($skippedTests) > 0;
+        if ($hasSkippedTests) {
+            $orderedListOfTests = array_diff($orderedListOfTests, $skippedTests);
+        }
+
         // for even split, calculate number of tests in each group
         $numberOfElementsInGroup = floor(count($orderedListOfTests) / $this->numGroups);
 
@@ -266,6 +279,10 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
             }
 
             $groups[$i][] = $test;
+        }
+
+        if ($hasSkippedTests) {
+            $groups[$i] = array_merge($groups[$i], $skippedTests);
         }
 
         // saving group files

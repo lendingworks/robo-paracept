@@ -189,9 +189,10 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
                 $test->preload();
             }
 
+            $testFilePath = $this->getTestRelativePath($test);
+
             if (method_exists($test, 'getMetadata')) {
-                $testsListWithDependencies[TestDescriptor::getTestFullName($test)] = $test->getMetadata()
-                                                                                          ->getDependencies();
+                $testsListWithDependencies[$testFilePath] = $test->getMetadata()->getDependencies();
                 if ($testsHaveAtLeastOneDependency === false and count($test->getMetadata()->getDependencies()) != 0) {
                     $testsHaveAtLeastOneDependency = true;
                 }
@@ -203,7 +204,7 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
                     try{
                         $property = $ref->getProperty('dependencies');
                         $property->setAccessible(true);
-                        $testsListWithDependencies[TestDescriptor::getTestFullName($test)] = $property->getValue($test);
+                        $testsListWithDependencies[$testFilePath] = $property->getValue($test);
 
                         if ($testsHaveAtLeastOneDependency === false and count($property->getValue($test)) != 0) {
                             $testsHaveAtLeastOneDependency = true;
@@ -215,10 +216,10 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
                 } while($ref = $ref->getParentClass());
 
             } else {
-                $testsListWithDependencies[TestDescriptor::getTestFullName($test)] = [];
+                $testsListWithDependencies[$testFilePath] = [];
             }
         }
-        
+
         if ($testsHaveAtLeastOneDependency) {
             $this->printTaskInfo('Resolving test dependencies');
 
@@ -229,7 +230,7 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
                 $this->printTaskError($e->getMessage());
                 return false;
             }
-            
+
             // resolved and ordered list of dependencies
             $orderedListOfTests = [];
             // helper array
@@ -266,13 +267,34 @@ class SplitTestsByGroupsTask extends TestsSplitter implements TaskInterface
 
             $groups[$i][] = $test;
         }
-        
+
         // saving group files
         foreach ($groups as $i => $tests) {
             $filename = $this->saveTo . $i;
             $this->printTaskInfo("Writing $filename");
             file_put_contents($filename, implode("\n", $tests));
         }
+    }
+
+    /**
+     * Get the path to a particular test, relative to the Robofile.
+     *
+     * @param $test
+     *
+     * @return string
+     */
+    private function getTestRelativePath($test): string
+    {
+        $path = DIRECTORY_SEPARATOR . TestDescriptor::getTestFullName($test);
+        // Robo updates PHP's current working directory to the location of the
+        // Robofile.
+        $currentDir = getcwd() . DIRECTORY_SEPARATOR;
+
+        if (strpos($path, $currentDir) === 0) {
+            $path = substr($path, strlen($currentDir));
+        }
+
+        return $path;
     }
 }
 
